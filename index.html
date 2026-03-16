@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LairScreener — Live Cryptocurrency Prices</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%2358a6ff'/><stop offset='1' stop-color='%23a371f7'/></linearGradient></defs><rect width='32' height='32' rx='7' fill='url(%23g)'/><text x='5' y='24' font-size='20' fill='white'>⬡</text></svg>" />
+</head>
+<body>
+
+  <!-- Animated ticker bar -->
+  <div class="ticker-wrap" id="tickerWrap">
+    <div class="ticker-track" id="tickerTrack"></div>
+  </div>
+
+  <header>
+    <div class="header-inner">
+      <div class="logo">
+        <svg class="logo-svg" viewBox="0 0 40 40" width="40" height="40" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="logoGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#58a6ff"/>
+              <stop offset="100%" stop-color="#a371f7"/>
+            </linearGradient>
+          </defs>
+          <rect width="40" height="40" rx="10" fill="url(#logoGrad)"/>
+          <!-- Hex shape -->
+          <polygon points="20,6 32,13 32,27 20,34 8,27 8,13" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
+          <!-- Line chart icon -->
+          <polyline points="10,26 16,18 22,22 30,12" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="30" cy="12" r="2" fill="white"/>
+        </svg>
+        <div class="logo-text">
+          <h1>LairScreener</h1>
+          <span class="logo-tagline">Live Crypto Markets</span>
+        </div>
+      </div>
+      <div class="global-stats" id="globalStats">
+        <div class="stat-card">
+          <span class="stat-label">Cryptos</span>
+          <strong id="statCryptos">--</strong>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Markets</span>
+          <strong id="statMarkets">--</strong>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Market Cap</span>
+          <strong id="statMarketCap">--</strong>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">24h Volume</span>
+          <strong id="statVolume">--</strong>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">BTC Dominance</span>
+          <strong id="statBtcDom" class="btc-dom">--</strong>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero section with market overview -->
+  <section class="hero">
+    <div class="hero-inner">
+      <div class="hero-text">
+        <h2>Today's Cryptocurrency Prices</h2>
+        <p>Real-time market data for <strong id="heroCryptoCount">thousands of</strong> coins. Track prices, market caps, and trends.</p>
+      </div>
+      <div class="market-cards" id="marketCards">
+        <div class="market-card" id="cardBtc">
+          <div class="mc-top">
+            <img src="https://assets.coingecko.com/coins/images/1/small/bitcoin.png" alt="BTC" width="28" height="28" />
+            <span class="mc-name">Bitcoin</span>
+            <span class="mc-symbol">BTC</span>
+          </div>
+          <div class="mc-price" id="cardBtcPrice">--</div>
+          <div class="mc-change" id="cardBtcChange">--</div>
+          <canvas class="mc-canvas" id="cardBtcChart" width="180" height="48"></canvas>
+        </div>
+        <div class="market-card" id="cardEth">
+          <div class="mc-top">
+            <img src="https://assets.coingecko.com/coins/images/279/small/ethereum.png" alt="ETH" width="28" height="28" />
+            <span class="mc-name">Ethereum</span>
+            <span class="mc-symbol">ETH</span>
+          </div>
+          <div class="mc-price" id="cardEthPrice">--</div>
+          <div class="mc-change" id="cardEthChange">--</div>
+          <canvas class="mc-canvas" id="cardEthChart" width="180" height="48"></canvas>
+        </div>
+        <div class="market-card" id="cardSol">
+          <div class="mc-top">
+            <img src="https://assets.coingecko.com/coins/images/4128/small/solana.png" alt="SOL" width="28" height="28" />
+            <span class="mc-name">Solana</span>
+            <span class="mc-symbol">SOL</span>
+          </div>
+          <div class="mc-price" id="cardSolPrice">--</div>
+          <div class="mc-change" id="cardSolChange">--</div>
+          <canvas class="mc-canvas" id="cardSolChart" width="180" height="48"></canvas>
+        </div>
+        <div class="market-card" id="cardBnb">
+          <div class="mc-top">
+            <img src="https://assets.coingecko.com/coins/images/825/small/bnb-icon2_2x.png" alt="BNB" width="28" height="28" />
+            <span class="mc-name">BNB</span>
+            <span class="mc-symbol">BNB</span>
+          </div>
+          <div class="mc-price" id="cardBnbPrice">--</div>
+          <div class="mc-change" id="cardBnbChange">--</div>
+          <canvas class="mc-canvas" id="cardBnbChart" width="180" height="48"></canvas>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <main>
+    <div class="controls">
+      <div class="search-box">
+        <svg class="search-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+        </svg>
+        <input type="text" id="searchInput" placeholder="Search cryptocurrency..." autocomplete="off" />
+      </div>
+      <div class="controls-right">
+        <select id="currencySelect">
+          <option value="usd">USD ($)</option>
+          <option value="eur">EUR (€)</option>
+          <option value="gbp">GBP (£)</option>
+          <option value="jpy">JPY (¥)</option>
+          <option value="inr">INR (₹)</option>
+          <option value="btc">BTC (₿)</option>
+        </select>
+        <select id="perPageSelect">
+          <option value="50">50 per page</option>
+          <option value="100" selected>100 per page</option>
+          <option value="250">250 per page</option>
+        </select>
+        <button id="refreshBtn" class="btn-refresh" title="Refresh data">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+            <path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="table-container">
+      <table id="cryptoTable">
+        <thead>
+          <tr>
+            <th class="th-rank sortable" data-sort="market_cap_rank">#</th>
+            <th class="th-name sortable" data-sort="name">Name</th>
+            <th class="th-price sortable" data-sort="current_price">Price</th>
+            <th class="th-change sortable" data-sort="price_change_percentage_1h_in_currency">1h %</th>
+            <th class="th-change sortable" data-sort="price_change_percentage_24h">24h %</th>
+            <th class="th-change sortable" data-sort="price_change_percentage_7d_in_currency">7d %</th>
+            <th class="th-mcap sortable" data-sort="market_cap">Market Cap</th>
+            <th class="th-vol sortable" data-sort="total_volume">Volume (24h)</th>
+            <th class="th-supply sortable" data-sort="circulating_supply">Circulating Supply</th>
+            <th class="th-chart">Last 7 Days</th>
+          </tr>
+        </thead>
+        <tbody id="cryptoTableBody">
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pagination" id="pagination">
+      <button id="prevPage" class="btn-page" disabled>&larr; Previous</button>
+      <span id="pageInfo">Page 1</span>
+      <button id="nextPage" class="btn-page">Next &rarr;</button>
+    </div>
+
+    <div class="loading-overlay" id="loadingOverlay">
+      <div class="spinner"></div>
+      <p>Loading market data...</p>
+    </div>
+
+    <div class="error-banner" id="errorBanner" style="display:none">
+      <p id="errorMessage"></p>
+      <button id="errorRetry" class="btn-retry">Retry</button>
+    </div>
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+      <div class="footer-logo">
+        <svg viewBox="0 0 24 24" width="20" height="20" xmlns="http://www.w3.org/2000/svg">
+          <defs><linearGradient id="fg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#58a6ff"/><stop offset="100%" stop-color="#a371f7"/></linearGradient></defs>
+          <rect width="24" height="24" rx="6" fill="url(#fg)"/>
+          <polyline points="5,17 9,11 13,14 19,7" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>LairScreener</span>
+      </div>
+      <p>Data provided by <a href="https://www.coingecko.com/" target="_blank" rel="noopener noreferrer">CoinGecko API</a>. Prices update every 60 seconds.</p>
+      <p class="footer-disclaimer">For informational purposes only. Not financial advice.</p>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
