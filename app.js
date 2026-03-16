@@ -183,11 +183,97 @@ function renderGlobalStats(data) {
   $('#statMarketCap').textContent = `$${formatLargeNumber(d.total_market_cap?.usd)}`;
   $('#statVolume').textContent = `$${formatLargeNumber(d.total_volume?.usd)}`;
   $('#statBtcDom').textContent = `${(d.market_cap_percentage?.btc || 0).toFixed(1)}%`;
+
+  const count = d.active_cryptocurrencies;
+  if (count) $('#heroCryptoCount').textContent = count.toLocaleString();
+}
+
+// ===== Ticker Bar =====
+function renderTicker(coins) {
+  const track = $('#tickerTrack');
+  if (!track || !coins.length) return;
+
+  const top20 = coins.slice(0, 20);
+
+  // Build items twice for seamless loop
+  const makeItems = () =>
+    top20
+      .map((c) => {
+        const change = c.price_change_percentage_24h;
+        const cls = change >= 0 ? 'change-positive' : 'change-negative';
+        const sign = change >= 0 ? '+' : '';
+        return `
+        <span class="ticker-item">
+          <img src="${escapeAttr(c.image)}" alt="${escapeAttr(c.symbol)}" />
+          <span class="ticker-name">${escapeHtml(c.symbol.toUpperCase())}</span>
+          <span class="ticker-price">${formatCurrency(c.current_price, 'usd')}</span>
+          <span class="ticker-change ${cls}">${sign}${(change || 0).toFixed(2)}%</span>
+        </span>`;
+      })
+      .join('');
+
+  track.innerHTML = makeItems() + makeItems();
+
+  // Adjust animation speed based on content width
+  const itemWidth = 160;
+  const totalWidth = top20.length * itemWidth;
+  const duration = Math.max(30, totalWidth / 3);
+  track.style.animationDuration = `${duration}s`;
+}
+
+// ===== Hero Market Cards =====
+const HERO_COINS = [
+  { id: 'bitcoin',  priceEl: '#cardBtcPrice', changeEl: '#cardBtcChange', chartEl: '#cardBtcChart' },
+  { id: 'ethereum', priceEl: '#cardEthPrice', changeEl: '#cardEthChange', chartEl: '#cardEthChart' },
+  { id: 'solana',   priceEl: '#cardSolPrice', changeEl: '#cardSolChange', chartEl: '#cardSolChart' },
+  { id: 'binancecoin', priceEl: '#cardBnbPrice', changeEl: '#cardBnbChange', chartEl: '#cardBnbChart' },
+];
+
+function renderHeroCards(coins) {
+  for (const hero of HERO_COINS) {
+    const coin = coins.find((c) => c.id === hero.id);
+    if (!coin) continue;
+
+    const priceEl  = $(hero.priceEl);
+    const changeEl = $(hero.changeEl);
+    const chartEl  = $(hero.chartEl);
+
+    if (priceEl)  priceEl.textContent  = formatCurrency(coin.current_price, 'usd');
+
+    if (changeEl) {
+      const ch = coin.price_change_percentage_24h;
+      const sign = ch >= 0 ? '+' : '';
+      changeEl.textContent  = `${sign}${(ch || 0).toFixed(2)}%`;
+      changeEl.className    = `mc-change ${ch >= 0 ? 'change-positive' : 'change-negative'}`;
+    }
+
+    if (chartEl) {
+      const sparklineData = coin.sparkline_in_7d?.price || [];
+      if (sparklineData.length) {
+        const isPos = (coin.price_change_percentage_7d_in_currency ?? coin.price_change_percentage_24h ?? 0) >= 0;
+        requestAnimationFrame(() => drawSparkline(chartEl, sparklineData, isPos));
+      }
+    }
+  }
 }
 
 function createCoinRow(coin) {
   const tr = document.createElement('tr');
   tr.dataset.id = coin.id;
+
+  tr.style.cursor = 'pointer';
+  tr.setAttribute('tabindex', '0');
+  tr.setAttribute('role', 'button');
+  tr.setAttribute('aria-label', `View details for ${coin.name}`);
+  tr.addEventListener('click', () => {
+    window.location.hash = `coin-${coin.id}`;
+  });
+  tr.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      window.location.hash = `coin-${coin.id}`;
+    }
+  });
 
   const change1h = coin.price_change_percentage_1h_in_currency;
   const change24h = coin.price_change_percentage_24h;
@@ -377,6 +463,8 @@ function applyFiltersAndRender() {
   state.filteredCoins = coins;
   renderTable(coins);
   updatePagination();
+  renderTicker(state.coins);
+  renderHeroCards(state.coins);
 }
 
 // ===== Auto-refresh =====
@@ -459,14 +547,435 @@ function initEventListeners() {
     loadData();
     startAutoRefresh();
   });
+
+  // Back button
+  document.getElementById('backBtn').addEventListener('click', () => {
+    window.location.hash = '';
+  });
+
+  // Detail error retry
+  document.getElementById('detailRetry').addEventListener('click', () => {
+    const coinId = getHashCoinId();
+    if (coinId) showCoinDetail(coinId);
+  });
+}
+
+// ===== Hash Routing =====
+function getHashCoinId() {
+  const hash = window.location.hash;
+  if (hash.startsWith('#coin-')) return decodeURIComponent(hash.slice(6));
+  return null;
+}
+
+function handleRouteChange() {
+  const coinId = getHashCoinId();
+  if (coinId) {
+    showCoinDetail(coinId);
+  } else {
+    showMainView();
+  }
+}
+
+function showMainView() {
+  stopAutoRefresh();
+  document.getElementById('mainView').style.display = '';
+  document.getElementById('coinDetail').classList.add('hidden');
+  document.title = 'CryptoTracker — Live Cryptocurrency Prices';
+  if (state.coins.length > 0) {
+    applyFiltersAndRender();
+  } else {
+    loadData();
+  }
+  startAutoRefresh();
+}
+
+// ===== Detail State =====
+const detailState = {
+  coinId: null,
+  days: 7,
+};
+
+// ===== Safety Helpers =====
+function stripHtml(html) {
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html || '';
+  return tmp.textContent || '';
+}
+
+function safeUrl(url) {
+  if (!url || typeof url !== 'string') return null;
+  if (url.startsWith('https://') || url.startsWith('http://')) return url;
+  return null;
+}
+
+// ===== Detail API Calls =====
+async function fetchCoinDetail(coinId) {
+  return fetchWithRetry(
+    `${API_BASE}/coins/${encodeURIComponent(coinId)}?localization=false&tickers=false&market_data=true&community_data=false&developer_data=false`
+  );
+}
+
+async function fetchPriceHistory(coinId, days) {
+  return fetchWithRetry(
+    `${API_BASE}/coins/${encodeURIComponent(coinId)}/market_chart?vs_currency=${encodeURIComponent(state.currency)}&days=${days}`
+  );
+}
+
+// ===== Detail Chart =====
+function downsample(data, maxPoints) {
+  if (data.length <= maxPoints) return data;
+  const step = data.length / maxPoints;
+  return Array.from({ length: maxPoints }, (_, i) => data[Math.round(i * step)]);
+}
+
+function drawDetailChart(canvas, prices, isPositive) {
+  if (!prices || prices.length < 2) return;
+
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const W = rect.width;
+  const H = rect.height;
+
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ctx.scale(dpr, dpr);
+
+  const PAD_LEFT = 80;
+  const PAD_RIGHT = 16;
+  const PAD_TOP = 16;
+  const PAD_BOTTOM = 36;
+
+  const sampled = downsample(prices, 500);
+  const values = sampled.map((p) => p[1]);
+  const times = sampled.map((p) => p[0]);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+
+  const chartW = W - PAD_LEFT - PAD_RIGHT;
+  const chartH = H - PAD_TOP - PAD_BOTTOM;
+
+  const xFor = (i) => PAD_LEFT + (i / (sampled.length - 1)) * chartW;
+  const yFor = (v) => PAD_TOP + chartH - ((v - min) / range) * chartH;
+
+  const color = isPositive ? '#3fb950' : '#f85149';
+
+  // Grid lines & Y labels
+  ctx.lineWidth = 1;
+  const gridLines = 5;
+  for (let i = 0; i <= gridLines; i++) {
+    const y = PAD_TOP + (i / gridLines) * chartH;
+    ctx.strokeStyle = 'rgba(48,54,61,0.8)';
+    ctx.beginPath();
+    ctx.moveTo(PAD_LEFT, y);
+    ctx.lineTo(W - PAD_RIGHT, y);
+    ctx.stroke();
+
+    const val = max - (i / gridLines) * range;
+    ctx.fillStyle = 'rgba(139,148,158,0.9)';
+    ctx.font = `11px 'SF Mono', Consolas, monospace`;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(formatCurrency(val, state.currency), PAD_LEFT - 8, y);
+  }
+
+  // X labels
+  const xLabelCount = 5;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = 'rgba(139,148,158,0.9)';
+  for (let i = 0; i <= xLabelCount; i++) {
+    const idx = Math.round((i / xLabelCount) * (sampled.length - 1));
+    const x = xFor(idx);
+    const date = new Date(times[idx]);
+    let label;
+    if (detailState.days <= 1) {
+      label = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    } else if (detailState.days <= 90) {
+      label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    } else {
+      label = date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+    }
+    ctx.fillText(label, x, PAD_TOP + chartH + 8);
+  }
+
+  // Price line
+  ctx.beginPath();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  for (let i = 0; i < sampled.length; i++) {
+    const x = xFor(i);
+    const y = yFor(values[i]);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Gradient fill
+  const gradient = ctx.createLinearGradient(0, PAD_TOP, 0, PAD_TOP + chartH);
+  gradient.addColorStop(0, isPositive ? 'rgba(63,185,80,0.2)' : 'rgba(248,81,73,0.2)');
+  gradient.addColorStop(1, 'rgba(13,17,23,0)');
+  ctx.beginPath();
+  for (let i = 0; i < sampled.length; i++) {
+    const x = xFor(i);
+    const y = yFor(values[i]);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.lineTo(xFor(sampled.length - 1), PAD_TOP + chartH);
+  ctx.lineTo(PAD_LEFT, PAD_TOP + chartH);
+  ctx.closePath();
+  ctx.fillStyle = gradient;
+  ctx.fill();
+
+  // Store chart data for tooltip
+  canvas._chartData = { sampled, values, times, min, range, chartW, chartH, PAD_LEFT, PAD_RIGHT, PAD_TOP, xFor, yFor };
+}
+
+function addChartTooltip(canvas) {
+  const tooltip = document.getElementById('chartTooltip');
+
+  canvas.addEventListener('mousemove', (e) => {
+    const data = canvas._chartData;
+    if (!data) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const { sampled, values, times, PAD_LEFT, PAD_RIGHT, chartW, xFor, yFor } = data;
+
+    if (mouseX < PAD_LEFT || mouseX > rect.width - PAD_RIGHT) {
+      tooltip.style.display = 'none';
+      return;
+    }
+
+    const ratio = (mouseX - PAD_LEFT) / chartW;
+    const idx = Math.max(0, Math.min(sampled.length - 1, Math.round(ratio * (sampled.length - 1))));
+    const price = values[idx];
+    const time = new Date(times[idx]);
+
+    const timeStr =
+      detailState.days <= 1
+        ? time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+        : time.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+    tooltip.innerHTML = `<div class="tooltip-time">${timeStr}</div><div class="tooltip-price">${formatCurrency(price, state.currency)}</div>`;
+
+    let left = e.clientX + 14;
+    if (left + 160 > window.innerWidth) left = e.clientX - 174;
+    let top = e.clientY - 40;
+
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+    tooltip.style.display = 'block';
+  });
+
+  canvas.addEventListener('mouseleave', () => {
+    tooltip.style.display = 'none';
+  });
+}
+
+// ===== Render Coin Detail =====
+function renderCoinDetail(coin) {
+  const sym = currencySymbols[state.currency] || '$';
+  const md = coin.market_data;
+  const price = md.current_price?.[state.currency];
+  const change24h = md.price_change_percentage_24h;
+  const change1h = md.price_change_percentage_1h_in_currency?.[state.currency];
+  const change7d = md.price_change_percentage_7d_in_currency?.[state.currency];
+  const change30d = md.price_change_percentage_30d_in_currency?.[state.currency];
+  const marketCap = md.market_cap?.[state.currency];
+  const vol24h = md.total_volume?.[state.currency];
+  const ath = md.ath?.[state.currency];
+  const athDate = md.ath_date?.[state.currency];
+  const atl = md.atl?.[state.currency];
+  const atlDate = md.atl_date?.[state.currency];
+  const circulatingSupply = md.circulating_supply;
+  const totalSupply = md.total_supply;
+  const maxSupply = md.max_supply;
+
+  const descRaw = stripHtml(coin.description?.en || '');
+  const desc = descRaw.length > 1200 ? descRaw.slice(0, 1200).trimEnd() + '…' : descRaw;
+
+  const homepage = safeUrl(coin.links?.homepage?.find(Boolean));
+  const explorer = safeUrl(coin.links?.blockchain_site?.find(Boolean));
+  const reddit = safeUrl(coin.links?.subreddit_url);
+  const twitterHandle = coin.links?.twitter_screen_name;
+  const twitter = twitterHandle ? `https://twitter.com/${encodeURIComponent(twitterHandle)}` : null;
+
+  const changeRows = [
+    { label: '1h Change', val: change1h },
+    { label: '24h Change', val: change24h },
+    { label: '7d Change', val: change7d },
+    { label: '30d Change', val: change30d },
+  ];
+
+  const statRows = [
+    { label: 'Market Cap', val: marketCap != null ? `${sym}${formatLargeNumber(marketCap)}` : '—' },
+    { label: '24h Volume', val: vol24h != null ? `${sym}${formatLargeNumber(vol24h)}` : '—' },
+    { label: 'Circulating Supply', val: formatSupply(circulatingSupply, coin.symbol) },
+    { label: 'Total Supply', val: totalSupply ? formatSupply(totalSupply, coin.symbol) : '∞' },
+    { label: 'Max Supply', val: maxSupply ? formatSupply(maxSupply, coin.symbol) : '∞' },
+    {
+      label: 'All-Time High',
+      val: formatCurrency(ath, state.currency),
+      sub: athDate ? new Date(athDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '',
+    },
+    {
+      label: 'All-Time Low',
+      val: formatCurrency(atl, state.currency),
+      sub: atlDate ? new Date(atlDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '',
+    },
+    { label: 'Market Cap Rank', val: coin.market_cap_rank ? `#${coin.market_cap_rank}` : '—' },
+  ];
+
+  const rangeBtns = [1, 7, 30, 90, 365]
+    .map((d) => {
+      const label = d === 1 ? '24H' : d === 7 ? '7D' : d === 30 ? '30D' : d === 90 ? '90D' : '1Y';
+      return `<button class="chart-range-btn${d === detailState.days ? ' active' : ''}" data-days="${d}">${label}</button>`;
+    })
+    .join('');
+
+  const links = [
+    homepage && `<a href="${escapeAttr(homepage)}" target="_blank" rel="noopener noreferrer" class="detail-link">🌐 Website</a>`,
+    explorer && `<a href="${escapeAttr(explorer)}" target="_blank" rel="noopener noreferrer" class="detail-link">🔍 Explorer</a>`,
+    reddit && `<a href="${escapeAttr(reddit)}" target="_blank" rel="noopener noreferrer" class="detail-link">📣 Reddit</a>`,
+    twitter && `<a href="${escapeAttr(twitter)}" target="_blank" rel="noopener noreferrer" class="detail-link">𝕏 Twitter</a>`,
+  ]
+    .filter(Boolean)
+    .join('');
+
+  const content = document.getElementById('detailContent');
+  content.innerHTML = `
+    <div class="detail-header-card">
+      <div class="detail-coin-identity">
+        <img class="detail-coin-img" src="${escapeAttr(coin.image?.large || coin.image?.small || '')}" alt="${escapeAttr(coin.name)}" width="64" height="64" />
+        <div>
+          <h2 class="detail-coin-name">${escapeHtml(coin.name)}</h2>
+          <div class="detail-coin-meta">
+            <span class="detail-coin-symbol">${escapeHtml((coin.symbol || '').toUpperCase())}</span>
+            ${coin.market_cap_rank ? `<span class="detail-coin-rank">#${coin.market_cap_rank}</span>` : ''}
+          </div>
+        </div>
+      </div>
+      <div class="detail-price-block">
+        <div class="detail-price">${formatCurrency(price, state.currency)}</div>
+        <div class="detail-price-change ${changeClass(change24h)}">${formatPercent(change24h)} <span class="detail-change-label">24h</span></div>
+      </div>
+    </div>
+
+    <div class="detail-chart-card">
+      <div class="chart-range-btns">${rangeBtns}</div>
+      <div class="detail-chart-wrap">
+        <canvas id="detailChartCanvas"></canvas>
+      </div>
+    </div>
+
+    <div class="detail-changes-grid">
+      ${changeRows.map((r) => `
+        <div class="change-card">
+          <div class="change-label">${r.label}</div>
+          <div class="change-value ${changeClass(r.val)}">${formatPercent(r.val)}</div>
+        </div>`).join('')}
+    </div>
+
+    <div class="detail-stats-grid">
+      ${statRows.map((r) => `
+        <div class="stat-card">
+          <div class="stat-label">${r.label}</div>
+          <div class="stat-value">${r.val}</div>
+          ${r.sub ? `<div class="stat-sub">${r.sub}</div>` : ''}
+        </div>`).join('')}
+    </div>
+
+    ${desc ? `
+    <div class="detail-description-card">
+      <h3>About ${escapeHtml(coin.name)}</h3>
+      <p>${escapeHtml(desc)}</p>
+    </div>` : ''}
+
+    ${links ? `
+    <div class="detail-links-card">
+      <h3>Links</h3>
+      <div class="detail-links-list">${links}</div>
+    </div>` : ''}
+  `;
+
+  // Wire up chart range buttons
+  document.querySelectorAll('.chart-range-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      document.querySelectorAll('.chart-range-btn').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      detailState.days = parseInt(btn.dataset.days, 10);
+      await loadAndDrawChart(coin.id);
+    });
+  });
+}
+
+async function loadAndDrawChart(coinId) {
+  const canvas = document.getElementById('detailChartCanvas');
+  if (!canvas) return;
+  try {
+    const history = await fetchPriceHistory(coinId, detailState.days);
+    const prices = history?.prices;
+    if (prices && prices.length > 1) {
+      const isPositive = prices[prices.length - 1][1] >= prices[0][1];
+      drawDetailChart(canvas, prices, isPositive);
+      addChartTooltip(canvas);
+    }
+  } catch (err) {
+    console.error('Chart load failed:', err);
+  }
+}
+
+async function showCoinDetail(coinId) {
+  stopAutoRefresh();
+  detailState.coinId = coinId;
+  detailState.days = 7;
+
+  const mainEl = document.getElementById('mainView');
+  const detailEl = document.getElementById('coinDetail');
+  const detailLoading = document.getElementById('detailLoading');
+  const detailError = document.getElementById('detailError');
+  const detailContent = document.getElementById('detailContent');
+
+  mainEl.style.display = 'none';
+  detailEl.classList.remove('hidden');
+  detailLoading.classList.remove('hidden');
+  detailError.style.display = 'none';
+  detailContent.innerHTML = '';
+  document.title = 'Loading… — CryptoTracker';
+
+  try {
+    const coin = await fetchCoinDetail(coinId);
+    document.title = `${coin.name} (${(coin.symbol || '').toUpperCase()}) — CryptoTracker`;
+    renderCoinDetail(coin);
+    await loadAndDrawChart(coinId);
+  } catch (err) {
+    console.error('Failed to load coin detail:', err);
+    document.getElementById('detailErrorMsg').textContent =
+      `Failed to load data: ${err.message}. CoinGecko free API has rate limits — please wait a moment and retry.`;
+    detailError.style.display = 'flex';
+  } finally {
+    detailLoading.classList.add('hidden');
+  }
 }
 
 // ===== Init =====
 function init() {
   initEventListeners();
   updateSortHeaders();
-  loadData();
-  startAutoRefresh();
+  window.addEventListener('hashchange', handleRouteChange);
+
+  const coinId = getHashCoinId();
+  if (coinId) {
+    showCoinDetail(coinId);
+  } else {
+    loadData();
+    startAutoRefresh();
+  }
 }
 
 document.addEventListener('DOMContentLoaded', init);

@@ -113,13 +113,17 @@
     </div>
   </section>
 
-  <main>
+  <main id="mainView">
     <div class="controls">
-      <div class="search-box">
-        <svg class="search-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-        </svg>
-        <input type="text" id="searchInput" placeholder="Search cryptocurrency..." autocomplete="off" />
+      <div class="controls-left">
+        <span class="section-title">All Cryptocurrencies</span>
+        <span class="live-badge"><span class="live-dot"></span>Live</span>
+        <div class="search-box">
+          <svg class="search-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <input type="text" id="searchInput" placeholder="Search name or symbol..." autocomplete="off" />
+        </div>
       </div>
       <div class="controls-right">
         <select id="currencySelect">
@@ -181,6 +185,23 @@
       <button id="errorRetry" class="btn-retry">Retry</button>
     </div>
   </main>
+
+  <section id="coinDetail" class="coin-detail-page hidden">
+    <div class="detail-back">
+      <button id="backBtn" class="btn-back">← Back to Markets</button>
+    </div>
+    <div id="detailContent"></div>
+    <div class="detail-loading hidden" id="detailLoading">
+      <div class="spinner"></div>
+      <p>Loading coin data...</p>
+    </div>
+    <div class="error-banner" id="detailError" style="display:none">
+      <p id="detailErrorMsg"></p>
+      <button id="detailRetry" class="btn-retry">Retry</button>
+    </div>
+  </section>
+
+  <div id="chartTooltip" class="chart-tooltip" style="display:none"></div>
 
   <footer>
     <div class="footer-inner">
